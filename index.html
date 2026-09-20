@@ -508,6 +508,10 @@ function tpSupabaseMetadata(u){const m=u?.user_metadata||{};return {
   kycStatus:String(m.kycStatus||'Not submitted'),
   supabaseUserId:u?.id||''
 };}
+function tpSyncAuthToken(session){
+  if(session?.access_token)localStorage.setItem('tp_auth_token',session.access_token);
+  else localStorage.removeItem('tp_auth_token');
+}
 function tpSyncSupabaseUser(u){
   tpSupabaseUser=u||null;
   if(!u){localStorage.removeItem('tp_current');return null;}
@@ -559,9 +563,11 @@ function tpStartSupabaseAuth(){
   }
   tpAuthReady=TP_SUPABASE_CLIENT.auth.getSession().then(({data,error})=>{
     if(error)throw error;
+    tpSyncAuthToken(data?.session||null);
     return tpSyncSupabaseUser(data?.session?.user||null);
   }).catch(e=>{console.warn('Supabase session initialization failed:',e);return null;});
   TP_SUPABASE_CLIENT.auth.onAuthStateChange((event,session)=>{
+    tpSyncAuthToken(session||null);
     tpSyncSupabaseUser(session?.user||null);
     if(event==='SIGNED_OUT'&&location.hash!=='#/')go('');
   });
@@ -914,21 +920,8 @@ function header(){return `<div class="top">⌁ LIMITED TIME OFFER: Get 25% OFF o
 function go(r){location.hash='#/'+r}
 function openChallenges(e){
   if(e)e.preventDefault();
-  if(current()){
-    const u=user();
-    if(!u)return go('login');
-    if(!u.phoneVerified){
-      localStorage.setItem('tp_challenge_intent','1');
-      localStorage.setItem('tp_otp_phone',u.phone||'');
-      localStorage.setItem('tp_otp_next','deposit');
-      return go('verify-phone');
-    }
-    if(!localStorage.getItem('tp_selected_challenge')) localStorage.setItem('tp_selected_challenge','1');
-    go('deposit');
-  }else{
-    localStorage.setItem('tp_challenge_intent','1');
-    go('signup');
-  }
+  if(!localStorage.getItem('tp_selected_challenge')) localStorage.setItem('tp_selected_challenge','1');
+  go('deposit');
 }
 function setChallengeType(type){
   if(!challengeTypes[type])return;
@@ -1047,7 +1040,7 @@ function clearPromoCode(){localStorage.removeItem('tp_promo_code');const i=$('#p
 function tpRefreshInstantPromo(){const id=localStorage.getItem('tp_checkout_plan');const p=instantFundedPlans?.find(x=>String(x.id)===String(id));if(!p)return;const due=tpDiscountedAmount(p.fee),saveAmt=p.fee-due;const a=$('#instantAmountDue'),d=$('#instantDiscount'),h=$('#instantHeadlinePrice'),b=$('#instantPayButton');if(a)a.textContent=money(due);if(d)d.textContent='-'+money(saveAmt);if(h)h.textContent=money(due);if(b)b.textContent=`Pay ${money(due)} & Activate Account →`; }
 function promoCheckoutFields(){const active=tpPromoDiscount()>0;return `<div class="panel" style="margin:18px 0;padding:16px"><b>Special Offer</b><p class="muted" style="margin:6px 0 12px">Use code <b>${TP_PROMO_CODE}</b> to receive 25% OFF.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><input id="promoCodeInput" value="${active?TP_PROMO_CODE:''}" placeholder="Enter offer code" style="flex:1;min-width:180px;padding:12px;border:1px solid #dce4da;border-radius:9px;text-transform:uppercase"><button class="btn primary" type="button" onclick="applyPromoCode()">Apply</button>${active?'<button class="btn" type="button" onclick="clearPromoCode()">Remove</button>':''}</div><p id="promoMsg" class="muted" style="margin:10px 0 0;color:${active?'#168b38':'inherit'}">${active?'Offer applied! 25% discount will be reflected below.':'Enter the code to unlock the offer.'}</p></div>`}
 
-function buy(id,type){type=type||activeChallengeType||'1-phase';if(!challengeTypes[type])type='1-phase';localStorage.setItem('tp_challenge_type',type);localStorage.setItem('tp_selected_challenge',String(id));if(!current()){localStorage.setItem('tp_challenge_intent','1');go('signup');return}go('deposit')}
+function buy(id,type){type=type||activeChallengeType||'1-phase';if(!challengeTypes[type])type='1-phase';localStorage.setItem('tp_challenge_type',type);localStorage.setItem('tp_selected_challenge',String(id));go('deposit')}
 async function startPesapalCheckout({productType,amount,currency='USD',description,metadata={}}){
   const msg=$('#depositMsg')||$('#checkoutMsg')||$('#competitionCheckoutMsg');
   const btn=$('#pesapalPayButton')||$('#instantPesapalButton')||$('#competitionPesapalButton');
@@ -1110,18 +1103,53 @@ async function verifyCompetitionEligibilityAfterPayment(){
     $('#ppStatusText').textContent='Payment is confirmed, but the competition eligibility check is still pending. Please return to the competition page and check again shortly.';
   }
 }
+function guestAccountFieldsHTML(){
+  return `<div class="tpDepositCard tpPaymentCard" style="margin-top:0"><div class="tpPaymentHead"><div class="tpWalletIcon">＋</div><div><h2>Create your account</h2><p>Enter your details once — we create your account and process payment together.</p></div></div>
+    <div class="field"><label>Full name</label><input id="name" autocomplete="name" required></div>
+    <div class="field"><label>Location</label><input id="location" placeholder="City / Country" autocomplete="country-name" required></div>
+    <div class="field"><label>Phone number</label><div class="phoneSignup"><select id="signupCountry" aria-label="Country calling code" onchange="changeSignupCountry()">${phoneCountryOptions('KE')}</select><input id="signupPhone" type="tel" autocomplete="tel" inputmode="tel" placeholder="712 345 678" required></div></div>
+    <div class="field"><label>Email</label><input id="email" type="email" autocomplete="email" required></div>
+    ${passwordField('password','Password','At least 8 characters')}
+    <p style="font-size:13px;margin-top:6px">Already have an account? <a href="#/login" style="color:#42c800;font-weight:800">Log in</a></p>
+  </div>`;
+}
+async function ensureGuestAccount(msgEl){
+  if(current())return true;
+  if(!TP_SUPABASE_CLIENT){if(msgEl)msgEl.textContent='Supabase Authentication is not configured. Add the Supabase URL and anon key in config.js.';return false;}
+  const email=normalizeAuthEmail($('#email')?.value),pass=String($('#password')?.value||'');
+  const fullName=String($('#name')?.value||'').trim();
+  const location=String($('#location')?.value||'').trim();
+  if(!fullName){if(msgEl)msgEl.textContent='Enter your full name.';return false;}
+  if(!location){if(msgEl)msgEl.textContent='Enter your location.';return false;}
+  if(!email||!email.includes('@')){if(msgEl)msgEl.textContent='Enter a valid email address.';return false;}
+  if(pass.length<8){if(msgEl)msgEl.textContent='Your password must contain at least 8 characters.';return false;}
+  const phone=signupPhoneE164();
+  if(msgEl)msgEl.textContent='Creating your account…';
+  try{
+    const sb=tpRequireSupabase();
+    const{data,error}=await sb.auth.signUp({email,password:pass,options:{data:{fullName,location,phone,role:'client',kycStatus:'Not submitted'},emailRedirectTo:window.TRADERSPROP_SUPABASE_REDIRECT_URL||window.location.origin+'/?auth=callback'}});
+    if(error)throw error;
+    if(data?.session?.user){tpSyncSupabaseUser(data.session.user);return true;}
+    if(msgEl)msgEl.textContent='Account created. Check your email to confirm your account, then log in to complete payment.';
+    return false;
+  }catch(err){
+    if(msgEl)msgEl.textContent=err?.message||'Unable to create your account.';
+    return false;
+  }
+}
 function deposit(){
-  if(!current()){go('login');return;}
+  const loggedIn=!!current();
   const p=selectedChallengePlan(),id=Number(p.id);
   document.title='TradersProp — PesaPal Checkout';
   $('#app').innerHTML=header()+`<section class="tpCheckoutPage"><div class="tpCheckoutWrap">
-    <div class="tpCheckoutHero"><div class="tpCheckoutBrand"><div class="tpBackCircle" onclick="go('dashboard')">←</div><div><div class="tpCheckoutKicker">TRADERSPROP SECURE CHECKOUT</div><h1>Complete your payment</h1><p>Choose PesaPal and pay securely for your TradersProp challenge.</p></div></div><button class="tpCheckoutDash" onclick="go('dashboard')">Dashboard →</button></div>
+    <div class="tpCheckoutHero"><div class="tpCheckoutBrand"><div class="tpBackCircle" onclick="go('${loggedIn?'dashboard':'/'}')">←</div><div><div class="tpCheckoutKicker">TRADERSPROP SECURE CHECKOUT</div><h1>Complete your payment</h1><p>Choose PesaPal and pay securely for your TradersProp challenge.</p></div></div><button class="tpCheckoutDash" onclick="go('${loggedIn?'dashboard':'/'}')">${loggedIn?'Dashboard →':'Home →'}</button></div>
     <div class="tpCheckoutMain">
       <div class="tpAmountPanel">
         <div class="tpAmountIcon">$</div>
         <div class="tpAmountLabel"><b>Amount to pay</b><span>TradersProp challenge</span></div>
         <strong id="depositAmountTop">${money(tpDiscountedAmount(p.fee))}</strong>
       </div>
+      ${loggedIn?'':guestAccountFieldsHTML()}
       <div class="tpPlanPanel">
         <div class="tpPlanTitle"><span>Challenge</span><small>Select your account</small></div>
         <select id="depositPlan" onchange="refreshPesapalChallengeAmount()">${buildChallengePlans(localStorage.getItem('tp_challenge_type')||'1-phase').map(x=>`<option value="${x.id}" ${Number(x.id)===Number(p.id)?'selected':''}>${money(x.size)} ${challengeTypes[x.type].short} — ${money(x.fee)}</option>`).join('')}</select>
@@ -1131,7 +1159,7 @@ function deposit(){
       <div class="tpPesapalPanel">
         <div class="tpPesapalHeader"><div class="tpPesapalLogo">pesa<span>pal</span></div><div><h2>Pay securely with PesaPal</h2><p>One trusted checkout for cards and mobile money.</p></div><div class="tpPopular">✓ Recommended</div></div>
         <div class="tpPesapalMethod"><span class="tpRadioBig"></span><div class="tpPesapalMethodLogo">pesa<span>pal</span></div><div class="tpPesapalCopy"><b>PesaPal Checkout</b><small>Choose Visa, Mastercard, M-PESA or other supported options on the secure PesaPal page.</small></div><div class="tpMethodBadges"><span>VISA</span><span>MC</span><span>M</span></div></div>
-        <button id="pesapalPayButton" class="tpPesapalButton" onclick="startPesapalChallengeCheckout()"><span>Pay with PesaPal</span><b>→</b></button>
+        <button id="pesapalPayButton" class="tpPesapalButton" onclick="startPesapalChallengeCheckout()"><span>${loggedIn?'Pay with PesaPal':'Create Account & Pay'}</span><b>→</b></button>
         <div class="tpOr"><span>or continue with</span></div>
         <div class="tpQuickMethods"><div><span class="tpQuickIcon card">▣</span><b>Cards</b><small>Visa / Mastercard</small><i>›</i></div><div><span class="tpQuickIcon mpesa">M</span><b>M-PESA</b><small>Mobile money</small><i>›</i></div><div><span class="tpQuickIcon airtel">A</span><b>Airtel Money</b><small>Mobile money</small><i>›</i></div></div>
         <p id="depositMsg" class="tpCheckoutMsg">PesaPal will securely open the available payment methods for this transaction.</p>
@@ -1152,6 +1180,10 @@ function refreshPesapalChallengeAmount(){
 async function startPesapalChallengeCheckout(){
   const id=Number($('#depositPlan')?.value||0),p=buildChallengePlans(localStorage.getItem('tp_challenge_type')||'1-phase').find(x=>Number(x.id)===id);
   if(!p){$('#depositMsg').textContent='Please select a challenge first.';return;}
+  if(!current()){
+    const ok=await ensureGuestAccount($('#depositMsg'));
+    if(!ok)return;
+  }
   await startPesapalCheckout({productType:'challenge',amount:tpDiscountedAmount(p.fee),currency:'USD',description:`TradersProp ${challengeTypes[p.type].label} ${p.size} challenge`,metadata:{challengeId:p.id,challengeType:p.type,accountSize:p.size,originalAmount:p.fee,promoCode:tpPromoCode()||null}});
 }
 let mpesaConfig=null,mpesaStatusTimer=null,mpesaActiveRequestId='';
@@ -2010,31 +2042,35 @@ async function tpRefreshCompetitionLeaderboard(){
 }
 
 async function competitionCheckout(){
-  const u=user();
-  if(!u){localStorage.setItem('tp_competition_join_intent','october');go('signup');return;}
+  const loggedIn=!!current();
   document.title='TradersProp — PesaPal Competition Checkout';
   $('#app').innerHTML=header()+`<section class="tpCheckoutPage"><div class="tpCheckoutWrap">
-    <div class="tpCheckoutHero"><div class="tpCheckoutBrand"><div class="tpBackCircle" onclick="go('october-competition')">←</div><div><div class="tpCheckoutKicker">TRADERSPROP COMPETITION CHECKOUT</div><h1>Fund your $5 competition deposit</h1><p>A verified PesaPal deposit of at least $5 unlocks October competition eligibility.</p></div></div><button class="tpCheckoutDash" onclick="go('october-competition')">Competition →</button></div>
+    <div class="tpCheckoutHero"><div class="tpCheckoutBrand"><div class="tpBackCircle" onclick="go('${loggedIn?'october-competition':'/'}')">←</div><div><div class="tpCheckoutKicker">TRADERSPROP COMPETITION CHECKOUT</div><h1>Fund your $5 competition deposit</h1><p>A verified PesaPal deposit of at least $5 unlocks October competition eligibility.</p></div></div><button class="tpCheckoutDash" onclick="go('${loggedIn?'october-competition':'/'}')">${loggedIn?'Competition →':'Home →'}</button></div>
     <div class="tpCheckoutMain">
       <div class="tpAmountPanel"><div class="tpAmountIcon">🏆</div><div class="tpAmountLabel"><b>Amount to pay</b><span>October Competition deposit</span></div><strong>$5.00</strong></div>
+      ${loggedIn?'':guestAccountFieldsHTML()}
       <div class="tpPesapalPanel">
         <div class="tpPesapalHeader"><div class="tpPesapalLogo">pesa<span>pal</span></div><div><h2>Pay securely with PesaPal</h2><p>Your $5 deposit is processed through the same secure payment gateway used for challenges.</p></div><div class="tpPopular">✓ Recommended</div></div>
         <div class="tpPesapalMethod"><span class="tpRadioBig"></span><div class="tpPesapalMethodLogo">pesa<span>pal</span></div><div class="tpPesapalCopy"><b>PesaPal Checkout</b><small>Choose Visa, Mastercard, M-PESA or another supported payment option on the secure PesaPal page.</small></div><div class="tpMethodBadges"><span>VISA</span><span>MC</span><span>M</span></div></div>
-        <button id="competitionPesapalButton" class="tpPesapalButton" onclick="startCompetitionPesapalCheckout()"><span>Pay $5 with PesaPal</span><b>→</b></button>
+        <button id="competitionPesapalButton" class="tpPesapalButton" onclick="startCompetitionPesapalCheckout()"><span>${loggedIn?'Pay $5 with PesaPal':'Create Account & Pay $5'}</span><b>→</b></button>
         <div class="tpOr"><span>or continue with</span></div>
         <div class="tpQuickMethods"><div><span class="tpQuickIcon card">▣</span><b>Cards</b><small>Visa / Mastercard</small><i>›</i></div><div><span class="tpQuickIcon mpesa">M</span><b>M-PESA</b><small>Mobile money</small><i>›</i></div><div><span class="tpQuickIcon airtel">A</span><b>Airtel Money</b><small>Mobile money</small><i>›</i></div></div>
         <p id="competitionCheckoutMsg" class="tpCheckoutMsg">After payment, the server verifies your cumulative verified PesaPal deposit before registering you.</p>
       </div>
       <div class="tpCheckoutBenefits"><div><span>🔒</span><section><b>Protected checkout</b><small>Encrypted PesaPal payment connection</small></section></div><div><span>✓</span><section><b>Payment verification</b><small>Server verifies the $5 deposit</small></section></div><div><span>⚡</span><section><b>Competition access</b><small>Registration unlocks after verification</small></section></div></div>
       <div class="tpControlBanner"><span>✓</span><div><b>You're in control</b><p>Review the $5 amount before paying. Your competition registration is only accepted after the secure server verifies the PesaPal transaction.</p></div></div>
-      <div class="tpDepositCard tpPaymentCard" style="margin-top:0"><div class="tpPaymentHead"><div class="tpWalletIcon">✓</div><div><h2>Already deposited $5+?</h2><p>You do not need to pay again. We can check your existing verified PesaPal deposits.</p></div></div><button id="competitionEligibilityButton" class="btn primary full" onclick="checkCompetitionEligibility()">Check My Verified Deposit →</button><p id="competitionEligibilityMsg" class="tpDepositMsg">Eligibility is always confirmed server-side.</p></div>
+      ${loggedIn?`<div class="tpDepositCard tpPaymentCard" style="margin-top:0"><div class="tpPaymentHead"><div class="tpWalletIcon">✓</div><div><h2>Already deposited $5+?</h2><p>You do not need to pay again. We can check your existing verified PesaPal deposits.</p></div></div><button id="competitionEligibilityButton" class="btn primary full" onclick="checkCompetitionEligibility()">Check My Verified Deposit →</button><p id="competitionEligibilityMsg" class="tpDepositMsg">Eligibility is always confirmed server-side.</p></div>`:''}
     </div>
   </div></section>`;
 }
 async function startCompetitionPesapalCheckout(){
   const btn=$('#competitionPesapalButton'),msg=$('#competitionCheckoutMsg');
+  if(!current()){
+    const ok=await ensureGuestAccount(msg);
+    if(!ok)return;
+  }
   localStorage.setItem('tp_competition_payment_intent','1');
-  await startPesapalCheckout({productType:'deposit',amount:5,currency:'USD',description:'TradersProp October Competition Deposit',metadata:{purpose:'competition',competition:'october',requiredVerifiedDeposit:5}});
+  await startPesapalCheckout({productType:'competition_deposit',amount:5,currency:'USD',description:'TradersProp October Competition Deposit',metadata:{purpose:'competition',competition:'october',requiredVerifiedDeposit:5}});
   if(btn&&!location.hash.includes('pesapal-callback'))btn.disabled=false;
   if(msg)msg.textContent='PesaPal checkout is ready. Complete the $5 deposit, then the server will verify your competition eligibility.';
 }
