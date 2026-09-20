@@ -975,7 +975,7 @@ async function submitAuth(e,mode){
       if(!location)return m.textContent='Enter your location.';
       const {data,error}=await sb.auth.signUp({
         email,password:pass,
-        options:{data:{fullName,location,phone,referralCode,role:'client',kycStatus:'Not submitted'},emailRedirectTo:window.location.origin+'/#/login'}
+        options:{data:{fullName,location,phone,referralCode,role:'client',kycStatus:'Not submitted'},emailRedirectTo:window.TRADERSPROP_SUPABASE_REDIRECT_URL||window.location.origin+'/#/login'}
       });
       if(error)throw error;
       if(data?.session?.user){tpSyncSupabaseUser(data.session.user);m.textContent='Account created successfully.';go(localStorage.getItem('tp_challenge_intent')==='1'?'pricing':'dashboard');}
@@ -990,8 +990,13 @@ async function submitAuth(e,mode){
     if(localStorage.getItem('tp_challenge_intent')==='1'){localStorage.removeItem('tp_challenge_intent');go('pricing');}else go(data.session.user.user_metadata?.role==='admin'?'admin':'dashboard');
   }catch(err){
     console.error('Supabase authentication error:',err);
-    const msg=String(err?.message||'Unable to authenticate.');
-    m.textContent=msg.includes('Invalid login credentials')?'Incorrect email or password.':msg;
+    const code=String(err?.code||'');
+    const msg=String(err?.message||'');
+    if(code==='email_not_confirmed'||/email not confirmed/i.test(msg))m.textContent='Please confirm your email address, then try again.';
+    else if(code==='over_email_send_rate_limit'||code==='over_request_rate_limit'||err?.status===429)m.textContent='Too many attempts. Please wait a moment and try again.';
+    else if(/invalid login credentials|invalid credentials/i.test(msg))m.textContent='Incorrect email or password.';
+    else if(/password should be at least/i.test(msg))m.textContent='Your password must contain at least 8 characters.';
+    else m.textContent='Unable to authenticate right now. Please try again.';
   }
 }
 async function verifyPhonePage(){let u=user();if(!u)return go('login');const phone=localStorage.getItem('tp_otp_phone')||u.phone||'';document.title='TradersProp — Verify Phone';$('#app').innerHTML=header()+`<div class="authWrap"><div class="otpCard"><div class="kicker">PHONE VERIFICATION</div><h1>Verify your phone</h1><p class="muted">We are verifying <b>${esc(phone)}</b>. A 6-digit code will be sent by SMS.</p><button id="sendSignupOtp" class="btn primary full" onclick="sendSignupOtp()">Send verification code</button><div class="field"><label for="signupOtp">Verification code</label><input id="signupOtp" class="otpInput otpDigits" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="••••••" disabled></div><div class="otpActions"><button id="verifySignupOtpBtn" class="btn primary" onclick="verifySignupOtp()" disabled>Verify Phone</button><button id="resendSignupOtp" class="btn" onclick="sendSignupOtp()" disabled>Resend OTP</button></div><p id="otpMsg" class="muted" style="margin-top:14px"></p><button class="btn full" onclick="go('signup')" style="margin-top:8px">Change details</button></div></div>`;await sendSignupOtp()}
