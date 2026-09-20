@@ -508,6 +508,10 @@ function tpSupabaseMetadata(u){const m=u?.user_metadata||{};return {
   kycStatus:String(m.kycStatus||'Not submitted'),
   supabaseUserId:u?.id||''
 };}
+function tpSyncAuthToken(session){
+  if(session?.access_token)localStorage.setItem('tp_auth_token',session.access_token);
+  else localStorage.removeItem('tp_auth_token');
+}
 function tpSyncSupabaseUser(u){
   tpSupabaseUser=u||null;
   if(!u){localStorage.removeItem('tp_current');return null;}
@@ -559,9 +563,11 @@ function tpStartSupabaseAuth(){
   }
   tpAuthReady=TP_SUPABASE_CLIENT.auth.getSession().then(({data,error})=>{
     if(error)throw error;
+    tpSyncAuthToken(data?.session||null);
     return tpSyncSupabaseUser(data?.session?.user||null);
   }).catch(e=>{console.warn('Supabase session initialization failed:',e);return null;});
   TP_SUPABASE_CLIENT.auth.onAuthStateChange((event,session)=>{
+    tpSyncAuthToken(session||null);
     tpSyncSupabaseUser(session?.user||null);
     if(event==='SIGNED_OUT'&&location.hash!=='#/')go('');
   });
@@ -917,12 +923,6 @@ function openChallenges(e){
   if(current()){
     const u=user();
     if(!u)return go('login');
-    if(!u.phoneVerified){
-      localStorage.setItem('tp_challenge_intent','1');
-      localStorage.setItem('tp_otp_phone',u.phone||'');
-      localStorage.setItem('tp_otp_next','deposit');
-      return go('verify-phone');
-    }
     if(!localStorage.getItem('tp_selected_challenge')) localStorage.setItem('tp_selected_challenge','1');
     go('deposit');
   }else{
@@ -2034,7 +2034,7 @@ async function competitionCheckout(){
 async function startCompetitionPesapalCheckout(){
   const btn=$('#competitionPesapalButton'),msg=$('#competitionCheckoutMsg');
   localStorage.setItem('tp_competition_payment_intent','1');
-  await startPesapalCheckout({productType:'deposit',amount:5,currency:'USD',description:'TradersProp October Competition Deposit',metadata:{purpose:'competition',competition:'october',requiredVerifiedDeposit:5}});
+  await startPesapalCheckout({productType:'competition_deposit',amount:5,currency:'USD',description:'TradersProp October Competition Deposit',metadata:{purpose:'competition',competition:'october',requiredVerifiedDeposit:5}});
   if(btn&&!location.hash.includes('pesapal-callback'))btn.disabled=false;
   if(msg)msg.textContent='PesaPal checkout is ready. Complete the $5 deposit, then the server will verify your competition eligibility.';
 }
