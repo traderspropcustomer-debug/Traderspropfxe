@@ -528,6 +528,30 @@ function tpSyncSupabaseUser(u){
   return profile;
 }
 function tpRequireSupabase(){if(!TP_SUPABASE_CLIENT)throw new Error('Supabase Authentication is not configured. Add your Supabase Project URL and anon key in config.js, then redeploy.');return TP_SUPABASE_CLIENT;}
+async function tpHandleSupabaseRedirect(){
+  if(!TP_SUPABASE_CLIENT)return null;
+  const query=new URLSearchParams(location.search);
+  const code=query.get('code');
+  const tokenHash=query.get('token_hash');
+  const type=query.get('type')||'signup';
+  if(!code&&!tokenHash)return null;
+  try{
+    const result=code
+      ? await TP_SUPABASE_CLIENT.auth.exchangeCodeForSession(code)
+      : await TP_SUPABASE_CLIENT.auth.verifyOtp({token_hash:tokenHash,type});
+    if(result.error)throw result.error;
+    const session=result.data?.session;
+    if(session?.user){
+      tpSyncSupabaseUser(session.user);
+      history.replaceState(null,'',location.pathname+'#/dashboard');
+      return session.user;
+    }
+  }catch(error){
+    console.warn('Supabase email confirmation failed:',error);
+    history.replaceState(null,'',location.pathname+'#/login?confirmation=error');
+  }
+  return null;
+}
 function tpStartSupabaseAuth(){
   if(!TP_SUPABASE_CLIENT){
     tpAuthReady=Promise.resolve(null);
@@ -981,7 +1005,7 @@ async function submitAuth(e,mode){
       if(!location){m.textContent='Enter your location.';resetAuthSubmit();return;}
       const {data,error}=await sb.auth.signUp({
         email,password:pass,
-        options:{data:{fullName,location,phone,referralCode,role:'client',kycStatus:'Not submitted'},emailRedirectTo:window.TRADERSPROP_SUPABASE_REDIRECT_URL||window.location.origin+'/#/login'}
+        options:{data:{fullName,location,phone,referralCode,role:'client',kycStatus:'Not submitted'},emailRedirectTo:window.TRADERSPROP_SUPABASE_REDIRECT_URL||window.location.origin+'/?auth=callback'}
       });
       if(error)throw error;
       if(data?.session?.user){tpSyncSupabaseUser(data.session.user);m.textContent='Account created successfully.';go(localStorage.getItem('tp_challenge_intent')==='1'?'pricing':'dashboard');}
@@ -2270,7 +2294,7 @@ function tpPlaceOrder(side){const v=$('#tpVolume').value||'0.10';$('#tpOrderMsg'
 
 function route(){let r=location.hash.replace('#/','');if(r==='login'||r==='signup')auth(r);else if(r==='verify-phone')verifyPhonePage();else if(r==='pricing')pricing();else if(r==='deposit')deposit();else if(r==='instant-checkout')instantCheckout();else if(r==='competition-checkout')competitionCheckout();else if(r==='pesapal-callback')pesapalCallbackPage();else if(r==='mt5-accounts')dualMt5Accounts();else if(r==='mt5-provisioning')mt5Provisioning();else if(r==='dashboard')dashboard();else if(r==='terminal')tradingTerminal();else if(r==='payout')payout();else if(r==='profile')profileMenu();else if(r==='profile-details')profile();else if(r==='transfer-id-auth')transferIdAuthentication();else if(r==='kyc')kyc();else if(r==='competition')competition('september');else if(r==='october-competition')competition('october');else if(r==='affiliate')affiliate();else if(r==='admin-login')adminLogin();else if(r==='admin')user()?.role==='admin'?(window.location.href='admin.html'):adminLogin();else if(r==='trading-credentials')tradingCredentials();else if(r==='integration')integration();else if(r==='market')market();else if(r==='about')about();else if(r==='faq')faq();else if(r==='help-center')helpCenter();else home()}
 window.addEventListener('hashchange',()=>{tpAuthReady.then(()=>route());});
-tpStartSupabaseAuth().finally(()=>route());
+tpHandleSupabaseRedirect().finally(()=>tpStartSupabaseAuth()).finally(()=>route());
 </script>
 <script>
 window.addEventListener('load', () => {
