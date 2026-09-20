@@ -5,6 +5,6 @@ window.TRADERSPROP_API_BASE = 'https://traderspropdarajampesaintegration.vercel.
 
 // Paste these two PUBLIC Supabase values from:
 // Supabase Dashboard -> Project Settings -> API
-window.TRADERSPROP_SUPABASE_URL = window.TRADERSPROP_SUPABASE_URL || 'YOUR_SUPABASE_PROJECT_URL';
-window.TRADERSPROP_SUPABASE_ANON_KEY = window.TRADERSPROP_SUPABASE_ANON_KEY || 'YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY';
+window.TRADERSPROP_SUPABASE_URL = window.TRADERSPROP_SUPABASE_URL || 'https://spzenzesimmupocyzfui.supabase.co';
+window.TRADERSPROP_SUPABASE_ANON_KEY = window.TRADERSPROP_SUPABASE_ANON_KEY || 'sb_publishable_Ojhm_3c49VpdCMB58jk6Jg_6A4CSkKh';
 window.TRADERSPROP_SUPABASE_REDIRECT_URL = window.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || window.TRADERSPROP_SUPABASE_REDIRECT_URL || '';
