@@ -978,7 +978,7 @@ function auth(mode){
 }
 function signupPhoneE164(){const c=PHONE_COUNTRIES.find(x=>x.code===($('#signupCountry')?.value||'KE'))||PHONE_COUNTRIES.find(x=>x.code==='KE');let raw=String($('#signupPhone')?.value||'').trim().replace(/[\s().-]/g,'');if(raw.startsWith('+'))return raw;if(raw.startsWith(c.dial))return raw;if(raw.startsWith('0'))raw=raw.slice(1);return c.dial+raw}
 function changeSignupCountry(){const c=PHONE_COUNTRIES.find(x=>x.code===($('#signupCountry')?.value||'KE'));const i=$('#signupPhone');if(c&&i)i.placeholder=c.dial+' 712 345 678'}
-function completeAuthUser(u){let s=state();const i=s.users.findIndex(x=>x.email===u.email);if(i>=0)s.users[i]={...s.users[i],...u};else s.users.push(u);save(s);setCurrent(u.email);if(localStorage.getItem('tp_challenge_intent')==='1'){localStorage.removeItem('tp_challenge_intent');go('pricing');}else{go(u.role==='admin'?'admin':'dashboard')}}
+function completeAuthUser(u){let s=state();const i=s.users.findIndex(x=>x.email===u.email);if(i>=0)s.users[i]={...s.users[i],...u};else s.users.push(u);save(s);setCurrent(u.email);if(localStorage.getItem('tp_challenge_intent')==='1'){localStorage.removeItem('tp_challenge_intent');if(!localStorage.getItem('tp_selected_challenge'))localStorage.setItem('tp_selected_challenge','1');go('deposit');}else if(localStorage.getItem('tp_competition_join_intent')==='october'){localStorage.removeItem('tp_competition_join_intent');go('competition-checkout');}else{go(u.role==='admin'?'admin':'dashboard')}}
   function normalizeAuthEmail(v){return String(v||'').trim().toLowerCase()}
 let tpAuthSubmitting=false;
 async function submitAuth(e,mode){
@@ -1008,7 +1008,7 @@ async function submitAuth(e,mode){
         options:{data:{fullName,location,phone,referralCode,role:'client',kycStatus:'Not submitted'},emailRedirectTo:window.TRADERSPROP_SUPABASE_REDIRECT_URL||window.location.origin+'/?auth=callback'}
       });
       if(error)throw error;
-      if(data?.session?.user){tpSyncSupabaseUser(data.session.user);m.textContent='Account created successfully.';go(localStorage.getItem('tp_challenge_intent')==='1'?'pricing':'dashboard');}
+      if(data?.session?.user){tpSyncSupabaseUser(data.session.user);m.textContent='Account created successfully.';if(localStorage.getItem('tp_challenge_intent')==='1'){localStorage.removeItem('tp_challenge_intent');if(!localStorage.getItem('tp_selected_challenge'))localStorage.setItem('tp_selected_challenge','1');go('deposit');}else if(localStorage.getItem('tp_competition_join_intent')==='october'){localStorage.removeItem('tp_competition_join_intent');go('competition-checkout');}else go('dashboard');}
       else{m.textContent='Account created. Check your email to confirm your account, then log in.';}
       return;
     }
@@ -2011,7 +2011,7 @@ async function tpRefreshCompetitionLeaderboard(){
 
 async function competitionCheckout(){
   const u=user();
-  if(!u){localStorage.setItem('tp_competition_join_intent','october');go('login');return;}
+  if(!u){localStorage.setItem('tp_competition_join_intent','october');go('signup');return;}
   document.title='TradersProp — PesaPal Competition Checkout';
   $('#app').innerHTML=header()+`<section class="tpCheckoutPage"><div class="tpCheckoutWrap">
     <div class="tpCheckoutHero"><div class="tpCheckoutBrand"><div class="tpBackCircle" onclick="go('october-competition')">←</div><div><div class="tpCheckoutKicker">TRADERSPROP COMPETITION CHECKOUT</div><h1>Fund your $5 competition deposit</h1><p>A verified PesaPal deposit of at least $5 unlocks October competition eligibility.</p></div></div><button class="tpCheckoutDash" onclick="go('october-competition')">Competition →</button></div>
@@ -2071,7 +2071,7 @@ function competition(month='september'){
     </div></main>`;
     const btn=$('#joinOctoberBtn');
     if(btn&&!joined)btn.onclick=()=>{
-      if(!current()){localStorage.setItem('tp_competition_join_intent','october');go('login');return;}
+      if(!current()){localStorage.setItem('tp_competition_join_intent','october');go('signup');return;}
       go('competition-checkout');
     };
     if(joined) provisionCompetitionMt5();
